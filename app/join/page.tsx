@@ -1,0 +1,7 @@
+"use client";
+import {useState} from "react";
+export default function JoinPage(){
+  const[code,setCode]=useState(""),[status,setStatus]=useState<"idle"|"loading"|"error">("idle"),[error,setError]=useState("");
+  async function join(e:React.FormEvent){e.preventDefault();const trimmed=code.trim();if(!/^\d{4}$/.test(trimmed)){setStatus("error");setError("Enter the 4-digit activity code.");return}setStatus("loading");setError("");try{const response=await fetch(`/api/activities?code=${encodeURIComponent(trimmed)}`);const data=await response.json() as {data?:string;error?:string};if(!response.ok||!data.data)throw new Error(data.error||"This code is invalid or has expired.");window.location.href=`/activity#data=${data.data}`}catch(e){setStatus("error");setError(e instanceof Error?e.message:"This code is invalid or has expired.")}}
+  return <main className="studentPage"><div className="studentShell joinShell"><p className="eyebrow">QUESTION BUILDER</p><h1>Scavenger Hunt</h1><p>Enter your activity code</p><form className="joinForm" onSubmit={join}><input value={code} onChange={e=>{setCode(e.target.value.replace(/\D/g,"").slice(0,4));setStatus("idle")}} inputMode="numeric" pattern="[0-9]*" maxLength={4} placeholder="0000" autoFocus/><button type="submit" disabled={status==="loading"}>{status==="loading"?"Joining…":"Join"}</button></form>{status==="error"&&<p className="errorInline">{error}</p>}</div></main>
+}
