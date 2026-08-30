@@ -11,15 +11,23 @@ import type { ExtractedSelection } from "./selectionContext";
 // Pre-Entrance Study Materials project's Selection Assistant, simplified
 // since this page only ever has one selectable region (no cross-page
 // registry/Context needed).
+//
+// Only two actions by design: "Explain this" (a single adaptive
+// comprehension action - the server decides how much help a given
+// selection actually needs, rather than the student choosing between
+// separate translate/define/simplify/vocab tools) and "How to read
+// this" (audio only). The panel's own displayed text is itself wrapped
+// in the same selectable scope (tagged data-field="explanation"), and
+// the toolbar is never hidden just because a panel is already open, so
+// selecting a word inside a previous explanation re-triggers the same
+// two-button toolbar for a narrower follow-up - recursive support with
+// no separate code path.
 
-type ActionId = "translate" | "explain" | "easy" | "keywords" | "read";
+type ActionId = "explain" | "read";
 
 const ACTIONS: { id: ActionId; icon: string; label: string }[] = [
-  { id: "translate", icon: "🇯🇵", label: "Translate" },
-  { id: "explain", icon: "❓", label: "What does this mean?" },
-  { id: "easy", icon: "💬", label: "Easier English" },
-  { id: "keywords", icon: "🔑", label: "Key Words" },
-  { id: "read", icon: "🔊", label: "How do you read this?" },
+  { id: "explain", icon: "❓", label: "Explain this" },
+  { id: "read", icon: "🔊", label: "How to read this" },
 ];
 
 // Must stay in sync with app/api/selection-assistant/route.ts's own cap —
@@ -57,6 +65,11 @@ export default function SelectionAssistant({ level, children }: { level: string;
         setActive(null);
         return;
       }
+      // scopeRef wraps both the original question/follow-up/hint AND the
+      // result panel below (they're siblings inside the same scope), so a
+      // selection made inside a previous explanation is picked up exactly
+      // like one made in the original text - this is the entire mechanism
+      // behind recursive support, no special-casing needed here.
       setActive(extractSelectionContext(scopeRef.current, sel));
     }
     document.addEventListener("selectionchange", onSelectionChange);
@@ -98,18 +111,25 @@ export default function SelectionAssistant({ level, children }: { level: string;
     if (!panel.open) return;
     function onOutsideClick(e: MouseEvent) {
       if (!panelRef.current || panelRef.current.contains(e.target as Node)) return;
-      if (window.getSelection()?.toString()) return; // an in-progress selection drag must not close the panel
+      // Guards two cases, not just one: (1) a text-selection drag in
+      // progress anywhere in scope, and (2) clicking a toolbar button -
+      // the toolbar is a sibling of the panel, not nested inside it, so a
+      // toolbar click always looks like an "outside" mousedown here, but
+      // the student is acting on a still-active selection at that exact
+      // moment, so this check correctly lets it through without closing
+      // the panel first.
+      if (window.getSelection()?.toString()) return;
       setPanel(INITIAL_PANEL);
     }
     document.addEventListener("mousedown", onOutsideClick);
     return () => document.removeEventListener("mousedown", onOutsideClick);
   }, [panel.open]);
 
-  // "How do you read this?" — reuses the same server-side OpenAI TTS
-  // endpoint as the main question speaker button (tts-1-hd/alloy). Never
-  // falls back to browser speechSynthesis: on failure, show an error and
-  // stop, exactly like the main speaker button and like Pre-Entrance's
-  // own "How to Read" policy.
+  // "How to read this" — reuses the same server-side OpenAI TTS endpoint
+  // as the main question speaker button (tts-1-hd/alloy). Never falls
+  // back to browser speechSynthesis: on failure, show an error and stop,
+  // exactly like the main speaker button and like Pre-Entrance's own
+  // "How to Read" policy.
   const requestRead = useCallback(async (snapshot: ExtractedSelection) => {
     try {
       const response = await fetch("/api/speech", {
@@ -177,7 +197,7 @@ export default function SelectionAssistant({ level, children }: { level: string;
   return (
     <div ref={scopeRef} className="selectionScope">
       {children}
-      {active && !panel.open && (
+      {active && (
         <div
           ref={toolbarRef}
           role="toolbar"
@@ -210,10 +230,18 @@ export default function SelectionAssistant({ level, children }: { level: string;
             </button>
           </div>
           <div className="selectionPanelBody">
-            {panel.selection && <p className="selectionPanelOriginal">&ldquo;{panel.selection.text}&rdquo;</p>}
+            {panel.selection && (
+              <p className="selectionPanelOriginal" data-field="explanation">
+                &ldquo;{panel.selection.text}&rdquo;
+              </p>
+            )}
             {panel.loading && <p className="selectionPanelLoading">Thinking…</p>}
             {panel.error && !panel.loading && <p className="selectionPanelError">{panel.error}</p>}
-            {panel.result && !panel.loading && <p className="selectionPanelResult">{panel.result}</p>}
+            {panel.result && !panel.loading && (
+              <p className="selectionPanelResult" data-field="explanation">
+                {panel.result}
+              </p>
+            )}
           </div>
         </div>
       )}
